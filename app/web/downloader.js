@@ -2,8 +2,10 @@ import {setText} from './i18n.js';
 import {directory, getLocal, saveLocal, removeLocalFiles} from './local-store.js';
 import {remux} from './local-mux.js';
 import {receivePart} from './transfer-part.js';
+import {createFileWriter,needsWorkerWriter} from './file-writer.js';
 
 export const running=new Map();
+const exportFiles=new Map();
 export function safeName(title,ext){return (title.replace(/[\x00-\x1f\x7f/\\:*?"<>|]/g,'_').slice(0,140).replace(/[. ]+$/,'')||'video')+'.'+ext;}
 export async function api(path,method='GET',body){
   const controller=new AbortController();let timedOut=false;
@@ -35,14 +37,33 @@ export async function stop(id,cancel=false){
     await saveLocal(record);
   }
 }
-export async function exportFile(record){
+async function prepareExport(record){
+  if(exportFiles.has(record.id))return;
   const dir=await directory(record.id);
   const file=await (await dir.getFileHandle('result')).getFile();
-  const url=URL.createObjectURL(file);
-  const link=document.createElement('a');link.href=url;link.download=record.outputName;setText(link,'Сохранить файл');
-  document.body.append(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(url),60000);
+  exportFiles.set(record.id,URL.createObjectURL(file));
+}
+async function markExport(record){
   record.location=`Передан в загрузки браузера: «${record.outputName}». Фактическую папку смотрите в загрузках браузера.`;
   record.exportRequested=true;await saveLocal(record);
+}
+export function exportLink(record){
+  const url=exportFiles.get(record.id);if(!url)return null;
+  const link=document.createElement('a');link.href=url;link.download=record.outputName;setText(link,'Сохранить файл');
+  // A real user-activated link avoids Safari's restrictions after async work.
+  link.onclick=()=>{markExport(record).catch(error=>window.dispatchEvent(new CustomEvent('dav-export-error',{detail:error})));};
+  return link;
+}
+export async function exportFile(record){
+  await prepareExport(record);
+  const link=exportLink(record);link.onclick=null;document.body.append(link);link.click();link.remove();
+  await markExport(record);
+}
+export async function syncExportFiles(records){
+  const ready=records.filter(record=>record.status==='completed'&&!record.handle&&!record.localExpired&&!record.data_expired);
+  const ids=new Set(ready.map(record=>record.id));
+  for(const [id,url] of exportFiles)if(!ids.has(id)){URL.revokeObjectURL(url);exportFiles.delete(id);}
+  for(const record of ready)await prepareExport(record).catch(()=>{});
 }
 
 export async function download(job,chosenHandle,onChange){
@@ -127,7 +148,7 @@ async function executeDownload(job,chosenHandle,onChange){
         await remux(blobs,job.extension,destination,controller.signal,value=>{record.muxProgress=value;onChange(record);});
       }else{
         record.phase='save';await report(true);
-        const writer=await destination.createWritable();
+        const writer=await createFileWriter(destination);
         const reader=blobs[0].stream().getReader();
         try{while(true){controller.signal.throwIfAborted();const {done,value}=await reader.read();if(done)break;await writer.write(value);}await writer.close();}
         catch(e){await writer.abort().catch(()=>{});throw e;}finally{reader.releaseLock();}
@@ -135,7 +156,13 @@ async function executeDownload(job,chosenHandle,onChange){
       record.phase='complete';await report(true);record.status='completed';record.completedAt=Date.now();record.finished_at=record.completedAt/1000;record.expires_at=null;
       record.location=record.handle?`Сохранено: ${record.destinationLabel||'выбранная папка'} / ${record.handle.name}. Полный путь браузер не раскрывает.`:`Готовый файл «${record.outputName}» находится на этом устройстве в данных сайта.`;
       await saveLocal(record);
-      if(!record.handle)await exportFile(record);
+      if(!record.handle){
+        await prepareExport(record);
+        if(needsWorkerWriter()){
+          record.location=`Файл «${record.outputName}» готов. Нажмите «Сохранить файл» в карточке загрузки и подтвердите сохранение в браузере.`;
+          await saveLocal(record);
+        }else await exportFile(record);
+      }
       // Raw tracks are no longer needed. Keep fallback final file available for export.
       for await(const [name] of dir.entries())if(name.startsWith('part-'))await dir.removeEntry(name);
       return record;

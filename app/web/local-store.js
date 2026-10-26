@@ -1,3 +1,4 @@
+import {createFileWriter} from './file-writer.js';
 let database;
 export async function db() {
   if (!database) database = new Promise((resolve, reject) => {
@@ -41,9 +42,18 @@ export async function removeLocalFiles(id) {
 export async function supportsStorage() {
   if(!window.isSecureContext || !navigator.storage?.getDirectory || !window.indexedDB)
     throw new Error('Для локальной сборки нужен современный браузер и HTTPS (либо localhost).');
-  const root=await navigator.storage.getDirectory();
-  const probe=await root.getFileHandle('dav-capability-check',{create:true});
-  if(!probe.createWritable)throw new Error('Браузер не поддерживает запись локальных временных файлов. Обновите браузер.');
-  const writer=await probe.createWritable();await writer.close();await root.removeEntry('dav-capability-check');
+  let root,name,writer;
+  try{
+    root=await navigator.storage.getDirectory();
+    name='dav-capability-check-'+crypto.randomUUID();
+    const probe=await root.getFileHandle(name,{create:true});
+    writer=await createFileWriter(probe);await writer.write(new Uint8Array([1,2,3]));await writer.close();
+    const actual=new Uint8Array(await (await probe.getFile()).arrayBuffer());
+    if(actual.length!==3||actual.some((byte,index)=>byte!==index+1))throw new Error('Не удалось проверить запись файлов на устройстве. Разрешите хранение данных сайта и повторите попытку.');
+  }catch(error){
+    if(['NotAllowedError','SecurityError'].includes(error.name))throw new Error('Браузер запретил локальное хранилище. Откройте обычную, не приватную вкладку и разрешите данные сайта.');
+    if(error.name==='QuotaExceededError')throw new Error('Недостаточно свободного места в локальном хранилище браузера.');
+    throw error;
+  }finally{await writer?.abort().catch(()=>{});if(root&&name)await root.removeEntry(name).catch(()=>{});}
   await db();
 }

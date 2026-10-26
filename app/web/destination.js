@@ -38,21 +38,25 @@ function syncRememberedDestination(){
   return preferenceSync;
 }
 export async function initDestination(){
+  const canChoose=typeof window.showDirectoryPicker==='function';
+  document.querySelector('#destination-choose').hidden=!canChoose;
+  document.querySelector('#destination-button').hidden=!canChoose;
+  document.querySelector('.destination-row').classList.toggle('is-browser-only',!canChoose);
   window.addEventListener('dav-consent-change',()=>{
     syncRememberedDestination().catch(e=>reportError(e,{title:'Не удалось обновить сохранение настроек'}));
   });
   const raw=preferencesAllowed()?document.cookie.split('; ').find(v=>v.startsWith(cookieName+'='))?.slice(cookieName.length+1):null;
-  if(raw)try{const parsed=JSON.parse(decodeURIComponent(raw));if(['browser','directory'].includes(parsed.mode)&&typeof parsed.label==='string'&&parsed.label.length<=255)destination=parsed;}catch{}
+  if(raw)try{const parsed=JSON.parse(decodeURIComponent(raw));if((parsed.mode==='browser'||parsed.mode==='directory'&&canChoose)&&typeof parsed.label==='string'&&parsed.label.length<=255)destination=parsed;}catch{}
   writeCookie();display();
   try{
     if(preferencesAllowed()){
       const remote=await api('preferences');
       const local=preferencesAllowed()?await getSetting('destination'):null;
       if(preferencesAllowed()){
-        if(remote.mode==='directory'){
+        if(remote.mode==='directory'&&canChoose){
           destination=remote;
           if(local?.mode==='directory'&&local.label===remote.label)folder=local.handle||null;
-        }else destination=remote;
+        }else destination={mode:'browser',label:'Папка загрузок браузера'};
         writeCookie();display();
       }
     }
@@ -77,7 +81,7 @@ export async function initDestination(){
 }
 
 export async function destinationFile(job){
-  if(destination.mode==='browser')return null;
+  if(destination.mode==='browser'||typeof window.showDirectoryPicker!=='function')return null;
   if(!folder)throw new Error('Папка запомнена, но разрешение на неё отсутствует. Нажмите «…» и выберите её заново либо вернитесь к папке браузера.');
   if(folder.requestPermission&&await folder.requestPermission({mode:'readwrite'})!=='granted')throw new Error('Нет разрешения на запись в выбранную папку. Выберите папку через «…».');
   const create=async()=>{

@@ -1,10 +1,11 @@
 // One streaming request per media resource; Range is only a source-driven fallback/resume.
+import {createFileWriter} from './file-writer.js';
 const OVERLAP=64*1024;
 export async function receivePart({handle,state,expectedSize=null,signal,request,onBytes,checkpoint}){
   let existing=await handle.getFile(),offset=existing.size,total=state.total??expectedSize;
   let lastLength=state.lastLength||offset,restarts=0,requests=0;
   const reset=async()=>{
-    const writer=await handle.createWritable();await writer.close();
+    const writer=await createFileWriter(handle);await writer.close();
     onBytes(-offset);offset=0;total=expectedSize;state.validator=null;state.complete=false;state.size=0;state.total=total;
   };
   // Bytes from a previous run are reusable only with a version validator.
@@ -51,7 +52,7 @@ export async function receivePart({handle,state,expectedSize=null,signal,request
     state.total=total;state.complete=false;
     state.validator=validator||(response.status===206?previousValidator:null);
     existing=await handle.getFile();
-    const writer=await handle.createWritable({keepExistingData:true});await writer.seek(offset);
+    const writer=await createFileWriter(handle,{keepExistingData:true});await writer.seek(offset);
     const reader=response.body.getReader();let received=0,closed=false;
     const bodyStart=response.status===200?0:start;
     try{
@@ -62,7 +63,7 @@ export async function receivePart({handle,state,expectedSize=null,signal,request
         if((range&&received>range[1]-range[0]+1)||(!range&&total!=null&&received>total))throw new Error('Источник передал больше данных, чем заявлено.');
         const skip=Math.max(0,Math.min(value.length,offset-position));
         if(skip){
-          const saved=new Uint8Array(await existing.slice(position,position+skip).arrayBuffer());
+          const saved=writer.read?await writer.read(position,skip):new Uint8Array(await existing.slice(position,position+skip).arrayBuffer());
           if(saved.length!==skip||saved.some((byte,i)=>byte!==value[i]))throw new Error('Данные видео изменились на стыке порций. Продолжение остановлено; повторите загрузку.');
         }
         if(skip<value.length){

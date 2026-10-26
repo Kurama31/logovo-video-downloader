@@ -1,10 +1,11 @@
 import {Input, ALL_FORMATS, BlobSource, Output, StreamTarget, Mp4OutputFormat,
   WebMOutputFormat, MkvOutputFormat, EncodedPacketSink, EncodedVideoPacketSource,
   EncodedAudioPacketSource} from './vendor.js';
+import {createFileWriter} from './file-writer.js';
 
 export async function remux(blobs, extension, handle, signal, onProgress) {
   const inputs=blobs.map(blob=>new Input({source:new BlobSource(blob),formats:ALL_FORMATS}));
-  let output;
+  let output,writer;
   const lanes=[];
   try {
     // Separate sources contribute one primary video/audio each; no decoding or translation.
@@ -15,7 +16,7 @@ export async function remux(blobs, extension, handle, signal, onProgress) {
     }
     if(!hasVideo)throw new Error('В загруженных данных не найдена видеодорожка.');
     const format=extension==='webm'?new WebMOutputFormat():extension==='mkv'?new MkvOutputFormat():new Mp4OutputFormat({fastStart:false});
-    const writer=await handle.createWritable();
+    writer=await createFileWriter(handle);
     output=new Output({format,target:new StreamTarget(writer,{chunked:true,chunkSize:1024*1024})});
     for(const lane of lanes){
       const codec=await lane.track.getCodec();
@@ -46,6 +47,7 @@ export async function remux(blobs, extension, handle, signal, onProgress) {
     await output.finalize();onProgress(1);
   } catch(e) {
     if(output && !['finalized','canceled'].includes(output.state))await output.cancel().catch(()=>{});
+    await writer?.abort().catch(()=>{});
     throw e;
   } finally {
     for(const lane of lanes)await lane.iterator?.return().catch(()=>{});

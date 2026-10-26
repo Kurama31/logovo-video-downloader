@@ -1,5 +1,5 @@
 import {setText,translateStatic,getLocale} from './i18n.js';
-import {api, download, stop, running, exportFile} from './downloader.js';
+import {api, download, stop, running, exportFile,exportLink,syncExportFiles} from './downloader.js';
 import {allLocal, getLocal, saveLocal, deleteLocal, supportsStorage, removeLocalFiles} from './local-store.js';
 import {initDestination,destinationFile,destination} from './destination.js';
 import {analysisStatus} from './analysis-status.js';
@@ -8,6 +8,7 @@ import {reportError,errorText,forgetError} from './error-dialog.js';
 import {playerInfo} from './player-info.js';
 import {resumableQueue} from './queue-policy.js';
 import {initConsent,preferencesAllowed,removePreferenceCookie} from './consent.js';
+import {createWakeLockController} from './wake-lock.js';
 
 await initConsent();
 
@@ -21,6 +22,13 @@ let lastRender=0,primaryJobId=null;
 let catalogShown=null,batchActive=false,queueStopped=false,queueCurrent=null;
 let queueState=null;
 let playerData=null;
+const wakeController=createWakeLockController({onState:state=>{
+  const row=$('#screen-status');if(!row)return;row.hidden=state==='idle';row.dataset.state=state;
+  const texts={active:'Экран удерживается включённым, пока эта вкладка открыта на экране.',requesting:'Запрашиваем удержание экрана…',hidden:'Вернитесь на вкладку загрузки. В фоне браузер может остановить скачивание.',unavailable:'Браузер не умеет удерживать экран. На время загрузки можно отключить автоблокировку в настройках устройства.',denied:'Устройство не разрешило удерживать экран. Оставьте вкладку открытой и при необходимости отключите автоблокировку вручную.'};
+  setText(row,texts[state]||'');
+}});
+function updateWakeLock(){void wakeController.setActive((busy||batchActive)&&($('#keep-screen-awake')?.checked??true));}
+const wakeOption=$('#keep-screen-awake');if(wakeOption)wakeOption.onchange=updateWakeLock;
 function renderPlayer(){
   const detection=checkJob?.player_detection||(queueCurrent&&serverJobs.find(job=>job.id===queueCurrent)?.player_detection);
   if(detection)playerData=detection;
@@ -55,7 +63,7 @@ function checkResult(title,detail,kind=''){
   analysisStatus(state,percent,text);
   renderPlayer();
 }
-function updateButton(){const active=busy||batchActive,b=$('#download');setText(b,active?'Идёт загрузка':'Скачать');b.disabled=active||checking||!!capabilityError||!['awaiting','selection'].includes(checkJob?.status);$('#url').disabled=active;$('#quality').disabled=active;$('#destination-button').disabled=active;}
+function updateButton(){const active=busy||batchActive,b=$('#download');setText(b,active?'Идёт загрузка':'Скачать');b.disabled=active||checking||!!capabilityError||!['awaiting','selection'].includes(checkJob?.status);$('#url').disabled=active;$('#quality').disabled=active;$('#destination-button').disabled=active;updateWakeLock();}
 function describeCheck(){
   if(busy){updateButton();return;}
   if(capabilityError&&$('#url').value.trim()){checkResult('Скачать в этом браузере нельзя',capabilityError,'bad');}
@@ -108,9 +116,7 @@ async function runJob(job,handle){
   primaryJobId=job.id;
   live.set(job.id,{...job,status:'client_downloading',phase:'download'});render();
   busy=true;updateButton();checkResult('Идёт загрузка','Пауза и отмена доступны ниже. Данные сохраняются на вашем устройстве.');
-  let wake;
   try{
-    wake=await navigator.wakeLock?.request('screen').catch(()=>null);
     const result=await download({...job,destinationLabel:handle?(job.destinationLabel||destination.label):null},handle,record=>{
       if(record)live.set(job.id,{...record});
       if(performance.now()-lastRender>200){render();lastRender=performance.now();}
@@ -135,7 +141,7 @@ async function runJob(job,handle){
     checkResult('Не удалось завершить скачивание',errorText(e),'bad');
     if(!batchActive)notify(e,{title:'Ошибка скачивания',jobTitle:job.title,key:'job:'+job.id,retry:()=>runQueue([job.id])});
     throw e;
-  }finally{await wake?.release().catch(()=>{});busy=false;live.delete(job.id);await refresh();updateButton();}
+  }finally{busy=false;updateWakeLock();live.delete(job.id);await refresh();updateButton();}
 }
 function renderQueue(){
   const pending=resumableQueue(serverJobs,localJobs,[...live.values()]);
@@ -284,7 +290,7 @@ function render(){
       if(handle?.requestPermission&&await handle.queryPermission({mode:'readwrite'})!=='granted')await handle.requestPermission({mode:'readwrite'});
       await runJob({...job,status:'paused',destinationLabel:record?.destinationLabel||'выбранная ранее папка'},handle);
     },''));
-    if(job.status==='completed'&&!job.handle&&!job.localExpired)actions.append(actionButton('Сохранить файл',async()=>{const record=await getLocal(job.id);await exportFile(record);},'secondary'));
+    if(job.status==='completed'&&!job.handle&&!job.localExpired)actions.append(exportLink(job)||actionButton('Сохранить файл',async()=>{const record=await getLocal(job.id);await exportFile(record);},'secondary'));
     if(job.mode!=='browser'&&job.status==='ready'){
       const a=document.createElement('a');a.href=`/api/jobs/${job.id}/file`;a.download='';setText(a,'Скачать ранее подготовленный файл');actions.append(a);
     }
@@ -318,6 +324,7 @@ async function refresh(){
       const expired=local.status==='completed'?local.completedAt<Date.now()-7*86400000:local.expires_at&&local.expires_at<Date.now()/1000;
       if(expired&&!running.has(local.id)&&!local.localExpired){await removeLocalFiles(local.id);local.localExpired=true;local.data_expired=true;if(!['completed','cancelled'].includes(local.status)){local.error=local.error||'Срок хранения временных данных истёк. Для нового скачивания вставьте ссылку заново.';local.status='error';}await saveLocal(local);}
     }
+    await syncExportFiles(localJobs);
     render();if(!busy)describeCheck();
     backgroundStatus();
   }catch(e){backgroundStatus(connected?'Не удалось обновить локальную историю. Повторяем обновление…':'Восстанавливаем соединение…');}
@@ -354,9 +361,10 @@ $('#new-job').onsubmit=async event=>{
   try{forgetError('job:'+checkJob.id);const handle=await destinationFile(checkJob);await runJob(checkJob,handle);}catch(e){if(e?.name!=='AbortError')notify(e,{title:'Не удалось начать скачивание',key:checkJob?'job:'+checkJob.id:null});}
 };
 window.addEventListener('online',refresh);
+window.addEventListener('dav-export-error',event=>notify(event.detail,{title:'Не удалось сохранить отметку о файле'}));
 window.addEventListener('dav-language-change',render);
 window.addEventListener('offline',()=>backgroundStatus('Восстанавливаем соединение…'));
 document.addEventListener('visibilitychange',()=>{if(!document.hidden)refresh();});
-try{await supportsStorage();}catch(e){capabilityError=errorText(e);notify(e,{title:'Браузер не поддерживает сохранение'});}
+try{await supportsStorage();}catch(e){capabilityError=errorText(e);notify(e,{title:'Не удалось подготовить сохранение'});}
 try{await initDestination();}catch(e){notify(e,{title:'Не удалось загрузить настройку папки'});}
 await refresh();setInterval(refresh,2000);updateButton();
