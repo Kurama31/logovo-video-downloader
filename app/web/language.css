@@ -7,6 +7,7 @@
 .keep-screen-option input{width:17px;height:17px;padding:0;margin:1px 0 0;flex:none;accent-color:var(--accent)}
 .screen-status{font-size:12px;line-height:1.6;color:var(--muted);margin:10px 0 0}
 .screen-status[data-state="active"]{color:var(--accent)}
+.share-note{font-size:12px;color:var(--muted);line-height:1.6;margin:10px 0 0}
 .consent-language{justify-content:flex-end;margin-bottom:16px}
 .sources [data-i18n]{padding:0;color:inherit}
 #error-job-title{white-space:pre-wrap;overflow-wrap:anywhere}

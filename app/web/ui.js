@@ -1,5 +1,5 @@
 import {setText,translateStatic,getLocale} from './i18n.js';
-import {api, download, stop, running, exportFile,exportLink,syncExportFiles} from './downloader.js';
+import {api, download, stop, running, exportFile,exportLink,syncExportFiles,canShareFile,shareFile} from './downloader.js';
 import {allLocal, getLocal, saveLocal, deleteLocal, supportsStorage, removeLocalFiles} from './local-store.js';
 import {initDestination,destinationFile,destination} from './destination.js';
 import {analysisStatus} from './analysis-status.js';
@@ -291,6 +291,12 @@ function render(){
       await runJob({...job,status:'paused',destinationLabel:record?.destinationLabel||'выбранная ранее папка'},handle);
     },''));
     if(job.status==='completed'&&!job.handle&&!job.localExpired)actions.append(exportLink(job)||actionButton('Сохранить файл',async()=>{const record=await getLocal(job.id);await exportFile(record);},'secondary'));
+    if(job.status==='completed'&&!job.handle&&!job.localExpired&&canShareFile(job)){
+      actions.append(actionButton('В Фото / Поделиться',()=>shareFile(job),'secondary'));
+      const note=document.createElement('p');note.className='share-note';
+      setText(note,'Откроется меню «Поделиться». На iPhone выберите «Сохранить видео», если этот пункт доступен.');
+      actions.after(note);
+    }
     if(job.mode!=='browser'&&job.status==='ready'){
       const a=document.createElement('a');a.href=`/api/jobs/${job.id}/file`;a.download='';setText(a,'Скачать ранее подготовленный файл');actions.append(a);
     }

@@ -2,7 +2,9 @@ import {setText} from './i18n.js';
 import {directory, getLocal, saveLocal, removeLocalFiles} from './local-store.js';
 import {remux} from './local-mux.js';
 import {receivePart} from './transfer-part.js';
-import {createFileWriter,needsWorkerWriter} from './file-writer.js';
+import {createFileWriter} from './file-writer.js';
+import {attemptAutomaticDownload,deliveryContext,sharePreparedFile} from './delivery-policy.js';
+import {deliveryLog} from './delivery-log.js';
 
 export const running=new Map();
 const exportFiles=new Map();
@@ -41,28 +43,59 @@ async function prepareExport(record){
   if(exportFiles.has(record.id))return;
   const dir=await directory(record.id);
   const file=await (await dir.getFileHandle('result')).getFile();
-  exportFiles.set(record.id,URL.createObjectURL(file));
+  const type={mp4:'video/mp4',m4v:'video/mp4',mov:'video/quicktime',webm:'video/webm',mkv:'video/x-matroska'}[record.extension]||file.type||'application/octet-stream';
+  const prepared=new File([file],record.outputName||safeName(record.title,record.extension),{type,lastModified:file.lastModified});
+  exportFiles.set(record.id,{url:URL.createObjectURL(prepared),file:prepared});
 }
-async function markExport(record){
-  record.location=`Передан в загрузки браузера: «${record.outputName}». Фактическую папку смотрите в загрузках браузера.`;
-  record.exportRequested=true;await saveLocal(record);
+async function markExport(record,outcome={status:'unconfirmed'},automatic=false){
+  record.exportAttempted=true;record.exportRequested=outcome.status!=='error';record.deliveryStatus=outcome.status;
+  record.deliveryErrorName=outcome.errorName||null;
+  record.location=outcome.status==='error'?'Браузер отклонил команду сохранения. Файл готов на этом устройстве: нажмите «Сохранить файл» или «В Фото / Поделиться».':automatic?
+    `Отправлена команда сохранения файла «${record.outputName}». Проверьте загрузки браузера. Если файла нет, нажмите «Сохранить файл» или «В Фото / Поделиться».`:
+    `Команда сохранения файла «${record.outputName}» передана браузеру. Факт сохранения и папку сайт проверить не может.`;
+  await saveLocal(record);
 }
 export function exportLink(record){
-  const url=exportFiles.get(record.id);if(!url)return null;
-  const link=document.createElement('a');link.href=url;link.download=record.outputName;setText(link,'Сохранить файл');
+  const prepared=exportFiles.get(record.id);if(!prepared)return null;
+  const link=document.createElement('a');link.href=prepared.url;link.download=prepared.file.name;setText(link,'Сохранить файл');
   // A real user-activated link avoids Safari's restrictions after async work.
-  link.onclick=()=>{markExport(record).catch(error=>window.dispatchEvent(new CustomEvent('dav-export-error',{detail:error})));};
+  link.onclick=()=>{
+    const context=deliveryContext();deliveryLog(record.id,'manual','attempt',context);
+    deliveryLog(record.id,'manual','command_sent',context);
+    markExport(record).catch(error=>window.dispatchEvent(new CustomEvent('dav-export-error',{detail:error})));
+  };
   return link;
 }
-export async function exportFile(record){
+export async function exportFile(record,{automatic=false}={}){
   await prepareExport(record);
-  const link=exportLink(record);link.onclick=null;document.body.append(link);link.click();link.remove();
-  await markExport(record);
+  const prepared=exportFiles.get(record.id),method=automatic?'automatic':'manual';
+  const outcome=attemptAutomaticDownload({url:prepared.url,name:prepared.file.name,
+    emit:(event,details)=>deliveryLog(record.id,method,event,details)});
+  await markExport(record,outcome,automatic).catch(error=>window.dispatchEvent(new CustomEvent('dav-export-error',{detail:error})));
+  return outcome;
+}
+export function canShareFile(record){
+  const prepared=exportFiles.get(record.id);
+  try{return !!prepared&&typeof navigator.share==='function'&&typeof navigator.canShare==='function'&&navigator.canShare({files:[prepared.file]});}catch{return false;}
+}
+export function shareFile(record){
+  const prepared=exportFiles.get(record.id);
+  if(!prepared||!canShareFile(record))throw new Error('Браузер не поддерживает передачу этого файла в меню «Поделиться». Сохраните файл через загрузки браузера.');
+  const action=sharePreparedFile({file:prepared.file,emit:(event,details)=>deliveryLog(record.id,'share',event,details)});
+  return action.then(async outcome=>{
+    record.shareStatus=outcome.status;
+    if(outcome.status==='handed_off')record.location='Файл передан системному меню «Поделиться». Выберите «Сохранить видео», если этот пункт доступен. Сайт не может проверить сохранение в «Фото».';
+    await saveLocal(record);
+    if(outcome.status==='error')throw new Error(outcome.errorName==='NotAllowedError'||outcome.errorName==='SecurityError'?
+      'Браузер заблокировал меню «Поделиться». Нажмите кнопку «В Фото / Поделиться» ещё раз или сохраните файл через загрузки браузера.':
+      'Не удалось передать файл в меню «Поделиться». Файл остаётся на устройстве: попробуйте «Сохранить файл».');
+    return outcome;
+  });
 }
 export async function syncExportFiles(records){
   const ready=records.filter(record=>record.status==='completed'&&!record.handle&&!record.localExpired&&!record.data_expired);
   const ids=new Set(ready.map(record=>record.id));
-  for(const [id,url] of exportFiles)if(!ids.has(id)){URL.revokeObjectURL(url);exportFiles.delete(id);}
+  for(const [id,prepared] of exportFiles)if(!ids.has(id)){URL.revokeObjectURL(prepared.url);exportFiles.delete(id);}
   for(const record of ready)await prepareExport(record).catch(()=>{});
 }
 
@@ -158,10 +191,7 @@ async function executeDownload(job,chosenHandle,onChange){
       await saveLocal(record);
       if(!record.handle){
         await prepareExport(record);
-        if(needsWorkerWriter()){
-          record.location=`Файл «${record.outputName}» готов. Нажмите «Сохранить файл» в карточке загрузки и подтвердите сохранение в браузере.`;
-          await saveLocal(record);
-        }else await exportFile(record);
+        await exportFile(record,{automatic:true});
       }
       // Raw tracks are no longer needed. Keep fallback final file available for export.
       for await(const [name] of dir.entries())if(name.startsWith('part-'))await dir.removeEntry(name);

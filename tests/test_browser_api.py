@@ -41,6 +41,29 @@ def test_start_does_not_queue_server_download(client):
     assert client.post(f'/api/jobs/{job_id}/resume',headers=HEADERS).json()['status']=='client_downloading'
 
 
+def test_delivery_diagnostic_is_owned_bounded_and_private(client, caplog):
+    from app.browser_routes import delivery_log_limits
+    job_id, _ = browser_job(client)
+    endpoint = f'/api/jobs/{job_id}/client/delivery-log'
+    payload = {'method': 'share', 'event': 'handed_off', 'visible': True,
+               'worker_storage': True, 'activation': True}
+    assert client.post(endpoint, headers=HEADERS, json=payload).status_code == 409
+    with DB.begin() as db:
+        db.get(Job, job_id).status = 'completed'
+    with caplog.at_level('INFO', logger='uvicorn.error'):
+        assert client.post(endpoint, headers=HEADERS, json=payload).json() == {'logged': True}
+    assert 'client_delivery' in caplog.text
+    assert 'https://example.com' not in caplog.text
+    assert client.post(endpoint, headers=HEADERS, json={**payload, 'filename': 'secret.mp4'}).status_code == 422
+    assert client.post(endpoint, headers=HEADERS, json={**payload, 'error_name': 'secret'}).status_code == 422
+    with TestClient(app) as stranger:
+        assert stranger.post(endpoint, headers=HEADERS, json=payload).status_code == 404
+    delivery_log_limits[job_id] = (time.time(), 60)
+    assert client.post(endpoint, headers=HEADERS, json=payload).status_code == 429
+    with DB() as db:
+        assert db.get(Job, job_id).status == 'completed'
+
+
 def test_plan_has_no_source_secrets(client,monkeypatch):
     job_id,record=browser_job(client)
     monkeypatch.setattr('app.browser_routes.refresh',lambda _: {'selected':json.dumps(record)})

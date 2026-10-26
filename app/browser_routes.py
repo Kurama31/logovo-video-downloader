@@ -1,12 +1,16 @@
 import json
+import logging
 import re
 import time
+from collections import OrderedDict
+from threading import Lock
+from typing import Literal
 
 import httpx
 from sqlalchemy import select
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.config import MAX_FILE_BYTES, PAUSE_SECONDS, PROXY_URL, READY_SECONDS
 from app.db import BrowserSession, DB, Job, SessionPreference
@@ -15,6 +19,42 @@ from app.media import refresh
 from app.plans import explain_error, plan_signature
 
 router = APIRouter()
+delivery_log_limits = OrderedDict()
+delivery_log_lock = Lock()
+
+
+class DeliveryDiagnostic(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    method: Literal['automatic', 'manual', 'share']
+    event: Literal['attempt', 'command_sent', 'error', 'handed_off', 'cancelled']
+    activation: bool | None = None
+    visible: bool
+    worker_storage: bool
+    error_name: Literal['NotAllowedError', 'SecurityError', 'AbortError', 'TypeError',
+                        'InvalidStateError', 'DataError', 'OtherError'] | None = None
+
+
+@router.post('/api/jobs/{job_id}/client/delivery-log')
+def browser_delivery_log(job_id: str, body: DeliveryDiagnostic, owner_id=Depends(session)):
+    with DB() as db:
+        job = owned(db, job_id, owner_id)
+        if job.mode != 'browser' or job.status != 'completed':
+            raise HTTPException(409, 'Файл ещё не готов.')
+    now = time.time()
+    with delivery_log_lock:
+        started, count = delivery_log_limits.get(job_id, (now, 0))
+        if now - started > 3600:
+            started, count = now, 0
+        if count >= 60:
+            raise HTTPException(429, 'Слишком много диагностических сообщений. Повторите позже.')
+        delivery_log_limits[job_id] = (started, count + 1)
+        delivery_log_limits.move_to_end(job_id)
+        while len(delivery_log_limits) > 2048:
+            delivery_log_limits.popitem(last=False)
+    # Browser-reported observations, NOT confirmation that a file reached Photos/disk.
+    entry = {'job_id': job_id, 'at': now, 'reported_by': 'browser', **body.model_dump()}
+    logging.getLogger('uvicorn.error').info('client_delivery %s', json.dumps(entry))
+    return {'logged': True}
 
 
 class DestinationPreference(BaseModel):

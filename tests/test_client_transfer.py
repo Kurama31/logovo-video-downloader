@@ -15,6 +15,7 @@ def test_client_streaming_and_range_fallbacks():
                              str(root / 'tests' / 'queue-policy.test.mjs'),
                              str(root / 'tests' / 'language.test.mjs'),
                              str(root / 'tests' / 'opfs-writer.test.mjs'),
-                             str(root / 'tests' / 'wake-lock.test.mjs')],
+                             str(root / 'tests' / 'wake-lock.test.mjs'),
+                             str(root / 'tests' / 'delivery-policy.test.mjs')],
                             cwd=root, capture_output=True, text=True, timeout=45)
     assert result.returncode == 0, result.stdout + result.stderr
