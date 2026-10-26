@@ -1,0 +1,38 @@
+#catalog-dialog{color:var(--text,#edf2e7);background:#1b2117;border:1px solid #536541;border-radius:18px;padding:26px;width:min(560px,calc(100% - 24px));max-height:90dvh;overflow:auto;box-sizing:border-box;box-shadow:0 20px 90px #0009}
+#catalog-dialog::backdrop{background:#000a}
+.catalog-heading{display:flex;gap:16px;justify-content:space-between;align-items:start}
+.catalog-heading h2{font-size:20px;margin:0;overflow-wrap:anywhere}
+#catalog-close{display:grid;place-items:center;flex-shrink:0;padding:0;width:34px;height:34px;min-height:34px;background:#343e2c;color:#eef2e8;font-size:22px;line-height:1}
+#catalog-close svg{display:block;width:16px;height:16px}
+.catalog-select{appearance:none;-webkit-appearance:none;padding:12px 42px 12px 14px;background-image:url('/static/icons/chevron-down.svg');background-repeat:no-repeat;background-position:right 14px center;background-size:14px 14px}
+#catalog-dialog p{font-size:13px;line-height:1.6;color:var(--muted)}
+#catalog-available{white-space:pre-line;overflow-wrap:anywhere;max-height:190px;overflow:auto}
+#catalog-selection{margin:7px 0 0;color:#ccf777!important}
+#catalog-selection[hidden]{display:none}
+#catalog-episodes.is-inactive{opacity:.65;cursor:text}
+#catalog-form>label{display:block;margin:18px 0 8px}
+#catalog-form input[type=text],#catalog-form select{width:100%;box-sizing:border-box}
+#catalog-form .catalog-checkbox{display:flex;align-items:center;gap:9px;font-size:14px}
+#catalog-all{width:18px;height:18px;accent-color:#c7f779}
+#catalog-error{color:#ffb29d!important;min-height:20px}
+#catalog-submit{width:100%;margin-top:12px}
+#catalog-submit:disabled{opacity:.5;cursor:not-allowed}
+#queue-panel{margin-top:16px;padding:16px;border:1px solid #536541;border-radius:12px;background:#1b2117}
+#queue-panel[hidden]{display:none}
+#queue-text{font-size:13px;line-height:1.6}
+#queue-panel button{margin:8px 8px 0 0}
+.job-date{display:block;font-size:11px;color:var(--muted);line-height:1.6;margin-top:5px}
+.intro .download-heading{font-size:clamp(16px,4.5vw,32px);line-height:1.2;letter-spacing:-.5px;white-space:nowrap}
+.job[data-status=cancelled] .badge{color:#bcc3b4}
+.job[data-status=cancelled] progress{opacity:.35}
+.job-error{white-space:pre-line}
+@media(max-width:450px){.job-top{display:grid;grid-template-columns:42px minmax(0,1fr);align-items:start;column-gap:12px;row-gap:6px}.job-top .file-icon{grid-column:1;grid-row:1 / span 2}.job-top .job-description{grid-column:2}.job-top .badge{grid-column:2;white-space:normal;overflow-wrap:anywhere}}
+#history-resume-row{display:flex;align-items:center;gap:16px;margin:0 0 16px}
+#history-resume-row[hidden]{display:none}
+#connection-status{margin:0 0 16px;font-size:13px;line-height:1.6;color:var(--muted)}
+#connection-status[hidden]{display:none}
+#history-resume-description{flex:1;min-width:0;margin:0;font-size:12px;line-height:1.6;color:var(--muted)}
+#history-resume{flex-shrink:0;max-width:100%;background:#2b3325;color:#d1dcc7}
+#history-resume[hidden]{display:none}
+@media(max-width:600px){#history-resume-row{flex-direction:column;align-items:flex-start;gap:8px}}
+@media(max-width:450px){#catalog-dialog{padding:18px}.catalog-heading h2{font-size:17px}}

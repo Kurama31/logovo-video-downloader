@@ -1,0 +1,84 @@
+name: download-all-videos
+x-app: &app
+  build: .
+  image: download-all-videos:local
+  restart: unless-stopped
+  init: true
+  environment: &env
+    DATABASE_URL: postgresql+psycopg://downloader:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@db/downloader
+    DATA_DIR: /data
+    PROXY_URL: http://egress:8081
+    PUBLIC_ORIGIN: ${PUBLIC_ORIGIN:-http://localhost:8080}
+    COOKIE_SECURE: ${COOKIE_SECURE:-false}
+    MAX_FILE_BYTES: ${MAX_FILE_BYTES:-5368709120}
+    MAX_DISK_BYTES: ${MAX_DISK_BYTES:-32212254720}
+    MAX_SESSION_JOBS: ${MAX_SESSION_JOBS:-10}
+    DOWNLOAD_WORKERS: ${DOWNLOAD_WORKERS:-2}
+    PAUSE_SECONDS: 604800
+    READY_SECONDS: 3600
+  volumes:
+    - videos:/data
+  networks: [internal]
+  depends_on:
+    db:
+      condition: service_healthy
+  security_opt: [no-new-privileges:true]
+  cap_drop: [ALL]
+  pids_limit: 128
+
+services:
+  db:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: downloader
+      POSTGRES_DB: downloader
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+    volumes: [database:/var/lib/postgresql/data]
+    networks: [internal]
+    healthcheck:
+      test: [CMD-SHELL, 'pg_isready -U downloader -d downloader']
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  api:
+    <<: *app
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+
+  worker:
+    <<: *app
+    command: [python, -m, app.worker]
+    stop_grace_period: 20s
+
+  egress:
+    <<: *app
+    command: [python, -m, app.egress]
+    depends_on: []
+    environment: {}
+    volumes: []
+    networks: [internal, internet]
+
+  nginx:
+    image: nginx:1.28-alpine
+    restart: unless-stopped
+    ports: ['${BIND_ADDRESS:-127.0.0.1}:${PORT:-8080}:80']
+    volumes:
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./app/web:/usr/share/nginx/html:ro
+    networks: [internal, internet]
+    depends_on:
+      api:
+        condition: service_healthy
+
+networks:
+  internal:
+    internal: true
+  internet: {}
+volumes:
+  database: {}
+  videos: {}

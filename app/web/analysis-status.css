@@ -1,0 +1,22 @@
+#analysis-status.analysis-status{display:block;min-height:26px;margin:10px 2px 0;padding:4px 0;color:var(--muted)}
+#player-info{font-size:12px;line-height:1.6;color:var(--muted);margin:9px 2px 0;overflow-wrap:anywhere}
+#player-info[hidden]{display:none}
+#player-info[data-state=detected]{color:#d0ddbf}
+.analysis-line{display:flex;align-items:center;gap:9px;min-height:22px;width:100%}
+#analysis-status-text{flex-shrink:0;font-size:12px;white-space:nowrap}
+#analysis-dots{flex:1 1 0%;min-width:0;overflow:hidden;white-space:nowrap;font-family:monospace;font-size:16px;line-height:20px;letter-spacing:3px}
+.analysis-result{display:flex;align-items:center;justify-content:center;flex:0 0 20px;width:20px;height:20px}
+#analysis-clear{display:none;padding:0;margin:0;border:0;min-width:20px;min-height:20px;width:20px;height:20px;border-radius:4px;background:transparent;cursor:pointer}
+#analysis-status[data-state=error] #analysis-clear{display:flex;align-items:center;justify-content:center}
+#analysis-clear:focus-visible{outline:2px solid var(--accent,#ccf77b);outline-offset:3px}
+#analysis-status[data-state] .analysis-result img{display:none;width:20px;height:20px;border:0;border-radius:4px;background:white}
+#analysis-status[data-state=success] .analysis-check,#analysis-status[data-state=error] .analysis-error{display:block}
+#analysis-status[data-state=analyzing]{color:#d8e7cb}
+#analysis-status[data-state=success]{color:#83df9d}
+#analysis-status[data-state=error]{padding:9px 11px;border:1px solid #78554a;border-radius:8px;background:#2a1d18;color:#efb59f}
+#analysis-status[data-state=error] .analysis-result .analysis-error{display:block}
+#analysis-status[data-state=success] .analysis-result .analysis-check{display:block}
+#analysis-reason{font-size:12px;line-height:1.5;margin:9px 0 0;overflow-wrap:anywhere;white-space:normal}
+#analysis-reason[hidden]{display:none}
+#analysis-status[data-state=idle] #analysis-dots,#analysis-status[data-state=idle] .analysis-result{display:none}
+@media(max-width:450px){.analysis-line{gap:6px}#analysis-status-text{font-size:11px}#analysis-dots{letter-spacing:2px}}
