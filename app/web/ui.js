@@ -1,3 +1,4 @@
+import {setText,translateStatic,getLocale} from './i18n.js';
 import {api, download, stop, running, exportFile} from './downloader.js';
 import {allLocal, getLocal, saveLocal, deleteLocal, supportsStorage, removeLocalFiles} from './local-store.js';
 import {initDestination,destinationFile,destination} from './destination.js';
@@ -27,9 +28,9 @@ function renderPlayer(){
 }
 const cancelledHere=new Set();
 function notify(error,options={}){message(errorText(error));reportError(error,options);}
-function message(text){$('#message').textContent=text;}
+function message(text){setText($('#message'),text);}
 function bytes(value){if(value==null)return 'размер неизвестен';const u=['Б','КБ','МБ','ГБ'];let n=value,i=0;while(n>=1024&&i<3){n/=1024;i++;}return n.toFixed(i?1:0)+' '+u[i];}
-const historyClock=new Intl.DateTimeFormat('ru-RU',{year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hourCycle:'h23'});
+const historyClock={format:date=>new Intl.DateTimeFormat(getLocale(),{year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).format(date)};
 function historyDate(job){
   const finished=job.finished_at||(job.status==='completed'&&job.completedAt?job.completedAt/1000:null);
   const seconds=finished||job.created_at;
@@ -44,7 +45,7 @@ async function forgetJob(job){
 }
 function checkResult(title,detail,kind=''){
   $('#check-result').hidden=false;
-  $('#check-title').textContent=title;$('#check-detail').textContent=detail;$('#check-result').className='check-result '+kind;
+  setText($('#check-title'),title);setText($('#check-detail'),detail);$('#check-result').className='check-result '+kind;
   let state='idle',text=$('#url').value.trim()?title:'Вставьте ссылку для анализа',percent=0;
   if($('#url').value.trim()){
     if(title==='Проверяем ссылку…'){state='analyzing';percent=checkJob?.analysis_percent||0;}
@@ -54,7 +55,7 @@ function checkResult(title,detail,kind=''){
   analysisStatus(state,percent,text);
   renderPlayer();
 }
-function updateButton(){const active=busy||batchActive,b=$('#download');b.textContent=active?'Идёт загрузка':'Скачать';b.disabled=active||checking||!!capabilityError||!['awaiting','selection'].includes(checkJob?.status);$('#url').disabled=active;$('#quality').disabled=active;$('#destination-button').disabled=active;}
+function updateButton(){const active=busy||batchActive,b=$('#download');setText(b,active?'Идёт загрузка':'Скачать');b.disabled=active||checking||!!capabilityError||!['awaiting','selection'].includes(checkJob?.status);$('#url').disabled=active;$('#quality').disabled=active;$('#destination-button').disabled=active;}
 function describeCheck(){
   if(busy){updateButton();return;}
   if(capabilityError&&$('#url').value.trim()){checkResult('Скачать в этом браузере нельзя',capabilityError,'bad');}
@@ -98,7 +99,7 @@ async function scheduleCheck(delay=0,force=false){
   if(delay>0)timer=setTimeout(analyze,delay);else await analyze();
 }
 function actionButton(text,handler,style='secondary'){
-  const b=document.createElement('button');b.type='button';b.textContent=text;b.className=style;
+  const b=document.createElement('button');b.type='button';setText(b,text);b.className=style;
   b.onclick=async()=>{b.disabled=true;try{await handler();await refresh();}catch(e){notify(e,{retry:handler});}finally{b.disabled=false;}};return b;
 }
 async function runJob(job,handle){
@@ -157,13 +158,13 @@ function renderQueue(){
   $('#queue-resume').disabled=busy||!!capabilityError;
   $('#queue-pause').hidden=!batchActive;
   $('#queue-panel').dataset.state=batchActive?'active':completed===ids.length&&ids.length?'completed':errors?'error':'paused';
-  $('#queue-text').textContent=batchActive?`Идёт загрузка очереди · видео ${(queueState?.index||0)+1} из ${ids.length}`:completed===ids.length&&ids.length?'Очередь завершена':errors?'Очередь остановлена из-за ошибки':'Очередь на паузе';
+  setText($('#queue-text'),batchActive?`Идёт загрузка очереди · видео ${(queueState?.index||0)+1} из ${ids.length}`:completed===ids.length&&ids.length?'Очередь завершена':errors?'Очередь остановлена из-за ошибки':'Очередь на паузе');
   const progress=$('#queue-progress');progress.max=Math.max(1,ids.length);
   let fraction=0;
   if(current?.status==='client_downloading')fraction=current.phase==='mux' ? .9+.09*(current.muxProgress||0) : current.total?Math.min(.9,.9*current.downloaded/current.total):0;
   progress.value=Math.min(ids.length,completed+fraction);
   const stage=current?.phase==='analyze'?'Проверка доступности':current?.phase==='mux'?'Сборка на устройстве':current?.phase==='save'?'Сохранение':'Скачивание';
-  $('#queue-detail').textContent=`Готово: ${completed} из ${ids.length}. Не завершено: ${remaining.length}. Ошибок: ${errors}. Отменено: ${cancelled}.`+(batchActive&&current?`\n${stage}: ${current.title}`:pending.length?'\nОчередь сохранена в сессии. Для продолжения нажмите «Скачать очередь».':'\nМесто сохранения указано в карточках видео.');
+  setText($('#queue-detail'),`Готово: ${completed} из ${ids.length}. Не завершено: ${remaining.length}. Ошибок: ${errors}. Отменено: ${cancelled}.`+(batchActive&&current?`\n${stage}: ${current.title}`:pending.length?'\nОчередь сохранена в сессии. Для продолжения нажмите «Скачать очередь».':'\nМесто сохранения указано в карточках видео.'));
 }
 async function beginCatalogQueue(jobs){
   checkJob=null;checking=false;checkKey='';sequence++;
@@ -253,25 +254,25 @@ function render(){
   const current=jobs.find(job=>job.id===primaryJobId&&!['error','cancelled','completed'].includes(job.status))||jobs.find(job=>job.status==='client_downloading');
   primaryJobId=current?.id||null;
   const top=$('#current-download');top.replaceChildren();top.hidden=!current;
-  $('#count').textContent=jobs.length;
-  if(!jobs.length){$('#jobs').innerHTML=empty;return;}
+  setText($('#count'),jobs.length);
+  if(!jobs.length){$('#jobs').innerHTML=empty;translateStatic($('#jobs'));return;}
   const fragment=document.createDocumentFragment();
   for(const job of jobs){
     const node=$('#job-template').content.cloneNode(true);
     node.querySelector('.job').dataset.jobId=job.id;
-    node.querySelector('h3').textContent=job.title;
-    const date=historyDate(job),dateNode=node.querySelector('.job-date');dateNode.textContent=date.text;if(date.iso)dateNode.dateTime=date.iso;
-    node.querySelector('.job-meta').textContent=[job.actual_quality?job.actual_quality+'p':null,job.extension?.toUpperCase()].filter(Boolean).join(' · ');
-    node.querySelector('.badge').textContent=labels[job.status]||job.status;
+    setText(node.querySelector('h3'),job.title,job.phase!=='analyze');
+    const date=historyDate(job),dateNode=node.querySelector('.job-date');setText(dateNode,date.text);if(date.iso)dateNode.dateTime=date.iso;
+    setText(node.querySelector('.job-meta'),[job.actual_quality?job.actual_quality+'p':null,job.extension?.toUpperCase()].filter(Boolean).join(' · '));
+    setText(node.querySelector('.badge'),labels[job.status]||job.status);
     const progress=node.querySelector('progress');
     if(job.status==='completed')progress.value=100;
     else if(job.status==='analyzing')progress.removeAttribute('value');
     else if(job.phase==='mux')progress.value=90+9*(job.muxProgress||0);
     else if(job.total)progress.value=Math.min(90,90*job.downloaded/job.total);
     else if(running.has(job.id))progress.removeAttribute('value');
-    node.querySelector('.progress-detail').textContent=job.status==='cancelled'?'Загрузка отменена':job.phase==='analyze'?(job.status==='error'?'Проверка завершилась ошибкой':job.status==='pending'?'Ожидает своей очереди':job.status==='paused'?'Проверка приостановлена':'Проверяем доступность и параметры видео…'):[bytes(job.downloaded)+' / '+bytes(job.total),job.speed?bytes(job.speed)+'/с':null,job.phase==='mux'?'Завершаем файл на устройстве':null].filter(Boolean).join(' · ');
-    node.querySelector('.job-location').textContent=job.location||'Сохранение: папка, выбранная в браузере. Сайт не видит её полный путь.';
-    node.querySelector('.job-error').textContent=job.status==='cancelled'?'Отменено пользователем'+(job.error?'\nНе скачалось из-за ошибки ('+errorText(job.error)+')':''):job.status==='error'?'Не скачалось из-за ошибки ('+errorText(job.error)+')':job.error||'';
+    setText(node.querySelector('.progress-detail'),job.status==='cancelled'?'Загрузка отменена':job.phase==='analyze'?(job.status==='error'?'Проверка завершилась ошибкой':job.status==='pending'?'Ожидает своей очереди':job.status==='paused'?'Проверка приостановлена':'Проверяем доступность и параметры видео…'):[bytes(job.downloaded)+' / '+bytes(job.total),job.speed?bytes(job.speed)+'/с':null,job.phase==='mux'?'Завершаем файл на устройстве':null].filter(Boolean).join(' · '));
+    setText(node.querySelector('.job-location'),job.location||'Сохранение: папка, выбранная в браузере. Сайт не видит её полный путь.');
+    setText(node.querySelector('.job-error'),job.status==='cancelled'?'Отменено пользователем'+(job.error?'\nНе скачалось из-за ошибки ('+errorText(job.error)+')':''):job.status==='error'?'Не скачалось из-за ошибки ('+errorText(job.error)+')':job.error||'');
     node.querySelector('.job').dataset.status=job.status;
     const actions=node.querySelector('.actions');
     if(running.has(job.id))actions.append(actionButton('Пауза',()=>stop(job.id)));
@@ -285,19 +286,20 @@ function render(){
     },''));
     if(job.status==='completed'&&!job.handle&&!job.localExpired)actions.append(actionButton('Сохранить файл',async()=>{const record=await getLocal(job.id);await exportFile(record);},'secondary'));
     if(job.mode!=='browser'&&job.status==='ready'){
-      const a=document.createElement('a');a.href=`/api/jobs/${job.id}/file`;a.download='';a.textContent='Скачать ранее подготовленный файл';actions.append(a);
+      const a=document.createElement('a');a.href=`/api/jobs/${job.id}/file`;a.download='';setText(a,'Скачать ранее подготовленный файл');actions.append(a);
     }
     if(['completed','cancelled','error'].includes(job.status))actions.append(actionButton('Убрать из списка',()=>forgetJob(job),'cancel'));
     if(!['completed','cancelled','cancelling'].includes(job.status))actions.append(actionButton('Отменить',async()=>{cancelledHere.add(job.id);try{await stop(job.id,true);}catch(e){cancelledHere.delete(job.id);throw e;}},'cancel'));
-    if(job.expires_at&&!['completed','cancelled'].includes(job.status))node.querySelector('.expiry').textContent='Продолжение доступно до '+historyClock.format(new Date(job.expires_at*1000));
+    if(job.expires_at&&!['completed','cancelled'].includes(job.status))setText(node.querySelector('.expiry'),'Продолжение доступно до '+historyClock.format(new Date(job.expires_at*1000)));
     if(job.id===primaryJobId)top.append(node);else fragment.append(node);
   }
   if(fragment.childNodes.length)$('#jobs').replaceChildren(fragment);
-  else $('#jobs').innerHTML='<div class="empty"><p>Текущая загрузка показана выше. Других заданий пока нет.</p></div>';
+  else {$('#jobs').replaceChildren();const box=document.createElement('div');box.className='empty';const note=document.createElement('p');setText(note,'Текущая загрузка показана выше. Других заданий пока нет.');box.append(note);$('#jobs').append(box);}
+  translateStatic($('#jobs'));translateStatic(top);
 }
 let refreshing=false;
 function backgroundStatus(text=''){
-  const status=$('#connection-status');status.textContent=text;status.hidden=!text;
+  const status=$('#connection-status');setText(status,text);status.hidden=!text;
 }
 async function refresh(){
   if(refreshing)return;refreshing=true;
@@ -352,6 +354,7 @@ $('#new-job').onsubmit=async event=>{
   try{forgetError('job:'+checkJob.id);const handle=await destinationFile(checkJob);await runJob(checkJob,handle);}catch(e){if(e?.name!=='AbortError')notify(e,{title:'Не удалось начать скачивание',key:checkJob?'job:'+checkJob.id:null});}
 };
 window.addEventListener('online',refresh);
+window.addEventListener('dav-language-change',render);
 window.addEventListener('offline',()=>backgroundStatus('Восстанавливаем соединение…'));
 document.addEventListener('visibilitychange',()=>{if(!document.hidden)refresh();});
 try{await supportsStorage();}catch(e){capabilityError=errorText(e);notify(e,{title:'Браузер не поддерживает сохранение'});}

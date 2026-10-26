@@ -1,3 +1,4 @@
+import {setText,translate} from './i18n.js';
 const seen=new Set();
 const dialog=document.querySelector('#error-dialog');
 let retryAction=null;
@@ -10,10 +11,10 @@ export function forgetError(key){seen.delete(key);}
 export function reportError(value,{title='Не удалось выполнить действие',jobTitle='',key=null,retry=null}={}){
   if(key&&seen.has(key))return;
   if(key)seen.add(key);
-  const detail=(jobTitle?jobTitle+'\n\n':'')+errorText(value);
-  if(!dialog||typeof dialog.showModal!=='function'){window.alert(title+'\n\n'+detail);return;}
-  document.querySelector('#error-title').textContent=title;
-  document.querySelector('#error-detail').textContent=detail;
+  if(!dialog||typeof dialog.showModal!=='function'){window.alert(translate(title)+'\n\n'+(jobTitle?jobTitle+'\n\n':'')+translate(errorText(value)));return;}
+  setText(document.querySelector('#error-title'),title);
+  const jobNode=document.querySelector('#error-job-title');jobNode.hidden=!jobTitle;setText(jobNode,jobTitle,true);
+  setText(document.querySelector('#error-detail'),errorText(value));
   retryAction=retry;
   document.querySelector('#error-retry').hidden=!retry;
   document.querySelector('#error-retry').disabled=false;

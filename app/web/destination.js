@@ -1,3 +1,4 @@
+import {setText,setAttributeText} from './i18n.js';
 import {api,safeName} from './downloader.js';
 import {getSetting,setSetting,deleteSetting} from './local-store.js';
 import {reportError} from './error-dialog.js';
@@ -13,9 +14,9 @@ function writeCookie(){
 }
 function display(){
   const label=document.querySelector('#destination-label');
-  label.textContent=destination.label;
-  label.title=destination.mode==='browser'?'Используется папка из настроек браузера. Её полный путь сайт получить не может.':'Выбранная папка: '+destination.label+'. Браузер не раскрывает абсолютный путь.';
-  document.querySelector('#destination-note').textContent=destination.mode==='directory'?'Папка выбрана. Полный путь браузер не раскрывает.':'Папка из настроек браузера; полный путь недоступен сайту.';
+  setText(label,destination.mode==='browser'?'Папка загрузок браузера':destination.label,destination.mode!=='browser');
+  setAttributeText(label,'title',destination.mode==='browser'?'Используется папка из настроек браузера. Её полный путь сайт получить не может.':'Выбранная папка: '+destination.label+'. Браузер не раскрывает абсолютный путь.');
+  setText(document.querySelector('#destination-note'),destination.mode==='directory'?'Папка выбрана. Полный путь браузер не раскрывает.':'Папка из настроек браузера; полный путь недоступен сайту.');
 }
 async function persist(value,handle){
   // Persist permission locally. The server and cookie receive only a descriptive label.
@@ -56,7 +57,7 @@ export async function initDestination(){
       }
     }
     await syncRememberedDestination();
-  }catch(e){document.querySelector('#destination-note').textContent='Настройка показана из cookie. Не удалось синхронизировать с сервером.';reportError(e,{title:'Не удалось синхронизировать папку сохранения',key:'destination-sync'});}
+  }catch(e){setText(document.querySelector('#destination-note'),'Настройка показана из cookie. Не удалось синхронизировать с сервером.');reportError(e,{title:'Не удалось синхронизировать папку сохранения',key:'destination-sync'});}
   const button=document.querySelector('#destination-button');
   const menu=document.querySelector('#destination-menu');
   button.onclick=()=>{menu.hidden=!menu.hidden;button.setAttribute('aria-expanded',String(!menu.hidden));};

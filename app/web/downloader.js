@@ -1,3 +1,4 @@
+import {setText} from './i18n.js';
 import {directory, getLocal, saveLocal, removeLocalFiles} from './local-store.js';
 import {remux} from './local-mux.js';
 import {receivePart} from './transfer-part.js';
@@ -38,7 +39,7 @@ export async function exportFile(record){
   const dir=await directory(record.id);
   const file=await (await dir.getFileHandle('result')).getFile();
   const url=URL.createObjectURL(file);
-  const link=document.createElement('a');link.href=url;link.download=record.outputName;link.textContent='Сохранить файл';
+  const link=document.createElement('a');link.href=url;link.download=record.outputName;setText(link,'Сохранить файл');
   document.body.append(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(url),60000);
   record.location=`Передан в загрузки браузера: «${record.outputName}». Фактическую папку смотрите в загрузках браузера.`;
   record.exportRequested=true;await saveLocal(record);
